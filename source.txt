@@ -1,0 +1,136 @@
+// 定义一个映射模拟 if 语句
+map if = map {
+    ((true, if_expr, else_expr), if_expr),
+    ((false, if_expr, else_expr), else_expr)
+};
+
+// 定义一个映射dom，用于获取map和func的定义域
+map dom = { {
+    { (dom_value, ran_value) | } | { (dom_value, ran_value) | } in (func || map)
+} -> set
+    ({ (dom_value, ran_value) | }, { dom_value | })
+};
+
+// 定义一个映射ran，用于获取map和func的值域
+map ran = { {
+    { (dom_value, ran_value) | } | { (dom_value, ran_value) | } in (func || map)
+} -> set
+    ({ (dom_value, ran_value) | }, { ran_value | })
+};
+
+// def A = { obj a = A, obj s = A }
+
+// 最简单的集合定义方式，直接罗列元素，类似其他语言中的enum枚举
+
+// Second是一个最小的元素，不是集合，无法应用集合运算，因此用obj来定义它
+
+obj Second;
+obj Meter;
+obj Kg;
+obj Radian;
+obj Degree;
+def TimeUnits = { Second };
+def LengthUnits = { Meter };
+def MassUnits = { Kg };
+def AngleUnits = { Radian, Degree };
+
+// "||" 代表了集合的并集运算，BaseUnits是TimeUnits, LengthUnits, MassUnits, AngleUnits的并集，显然 "&&" 就代表了集合的交集运算
+
+def BaseUnits = TimeUnits || LengthUnits || MassUnits || AngleUnits;
+
+// "*" 代表了集合的笛卡尔积，设有两个集合A和B，A * B == { (a, b) | a in A && b in B }
+// "in" 代表了包含关系，或者说“属于”，a in A 是判断元素a是否在集合A中，
+// { (a, b) | a in A && b in B } 的集合定义方法就是定义使 "|" 后面的表达式为真的元素组成集合
+
+def DimensionalTimeUnits = TimeUnits * i32;
+def DimensionalLengthUnits = LengthUnits * i32;
+def DimensionalMassUnits = MassUnits * i32;
+def DimensionalAngleUnits = AngleUnits * i32;
+
+def DimensionalBaseUnits = BaseUnits * i32;
+
+def DimensionalBaseUnitOperation = func { {
+    ((u1, d1), (u2, d2)) | (u1 in BaseUnits && d1 in i32 && u2 in BaseUnits && d2 in i32) && (u1==u2 || (d1==0i32 || d2==0i32))
+} -> DimensionalBaseUnits |
+    [if] ( u1 == u2,
+        (u1, d1 + d2),
+        [if] ( d1 == 0i32,
+            (u2, d2),
+            (u1, d1)
+        )
+    )
+};
+
+def DimensionalBaseUnitInverse = func { {
+    (u, d) | (u, d) in DimensionalBaseUnits
+} -> DimensionalBaseUnits |
+    (u, -d)
+};
+
+// 进行函数 DimensionalBaseUnitOperation 与 集合 ((DimensionalTimeUnits * DimensionalTimeUnits) * DimensionalTimeUnits) 的交集运算，
+// 注意函数 DimensionalBaseUnitOperation 是 DimensionalBaseUnits * DimensionalBaseUnits -> DimensionalBaseUnits 的映射，
+// 因此 DimensionalBaseUnitOperation in ((DimensionalBaseUnits * DimensionalBaseUnits) * DimensionalBaseUnits)
+// 所以最后的运算结果得到的函数与 DimensionalBaseUnitOperation 一样，但是定义域被限制在了 DimensionalTimeUnits * DimensionalTimeUnits， 值域被限制在了 DimensionalTimeUnits
+
+def DimensionalTimeUnitOperation = DimensionalBaseUnitOperation && ((DimensionalTimeUnits * DimensionalTimeUnits) * DimensionalTimeUnits);
+def DimensionalLengthUnitOperation = DimensionalBaseUnitOperation && ((DimensionalLengthUnits* DimensionalLengthUnits) * DimensionalLengthUnits);
+def DimensionalMassUnitOperation = DimensionalBaseUnitOperation && ((DimensionalMassUnits* DimensionalMassUnits) * DimensionalMassUnits);
+def DimensionalAngleUnitOperation = DimensionalBaseUnitOperation && ((DimensionalAngleUnits* DimensionalAngleUnits) * DimensionalAngleUnits);
+
+def Units = { (t, l, m, a) | (t in DimensionalTimeUnits) && (l in DimensionalLengthUnits) && (m in DimensionalMassUnits) && (a in DimensionalAngleUnits) };
+
+func UnitOperation = { {
+    ((t1, l1, m1, a1),
+    (t2, l2, m2, a2)) |
+    (t1 in DimensionalTimeUnits && l1 in DimensionalLengthUnits && m1 in DimensionalMassUnits && a1 in DimensionalAngleUnits &&
+    t2 in DimensionalTimeUnits && l2 in DimensionalLengthUnits && m2 in DimensionalMassUnits && a2 in DimensionalAngleUnits) &&
+    ((t1, t2) in (dom) DimensionalTimeUnitOperation &&
+    (l1, l2) in (dom) DimensionalLengthUnitOperation &&
+    (m1, m2) in (dom) DimensionalMassUnitOperation &&
+    (a1, a2) in (dom) DimensionalAngleUnitOperation)
+} -> Units {
+    (
+        [DimensionalTimeUnitOperation] (t1, t2),
+        [DimensionalLengthUnitOperation] (l1, l2),
+        [DimensionalMassUnitOperation] (m1, m2),
+        [DimensionalAngleUnitOperation] (a1, a2),
+    )
+} };
+
+func UnitInverse = { {
+    (t, l, m, a) | (t, l, m, a) in Units
+} -> {
+    (
+        [DimensionalBaseUnitInverse] t,
+        [DimensionalBaseUnitInverse] l,
+        [DimensionalBaseUnitInverse] m,
+        [DimensionalBaseUnitInverse] a,
+    )
+} };
+
+set PhysicalQuantity = { (v, u) | u in Units };
+
+func PhysicalQuantityMul = { {
+    ((v1, u1), (v2, u2), v_mul) | v_mul in map && (v1, v2) in dom(v_mul) && (u1, u2) in dom(UnitOperation)
+} -> (ran) v_mul * (ran) UnitOperation {
+    ( (v_mul) (v1, v2), [UnitOperation] (u1, u2) )
+} };
+
+func PhysicalQuantityDiv = { {
+    ((v1, u1), (v2, u2), v_div) | v_div in map && (v1, v2) in dom(v_div) && (u1, u2) in dom(UnitOperation)
+} -> (ran) v_div * (ran) UnitOperation {
+    ( (v_div) (v1, v2), [UnitOperation] (u1, [UnitInverse] u2) )
+} };
+
+// 构建 Meter in Units，其他同理
+set Meter = ((TimeUnits::Second, 0i32), (LengthUnits::Meter, 1i32), (MassUnits::kg, 0i32), (AngleUnits::kg, 0i32));
+set Second = ((TimeUnits::Second, 1i32), (LengthUnits::Meter, 0i32), (MassUnits::kg, 0i32), (AngleUnits::kg, 0i32));
+set MeterPerSecond = ((TimeUnits::Second, -1i32), (LengthUnits::Meter, 1i32), (MassUnits::kg, 0i32), (AngleUnits::kg, 0i32));
+
+set Length = (6.0f64, Meter);
+set Time = (2.0f64, Second);
+set Velocity = [PhysicalQuantityDiv] (Length, Time);
+
+// 结果为 Velocity == (3.0f64, MeterPerSecond)
+
+// 未涉及但再拓展一点，语言中只提供了蕴含判断in，没有提供子集判断， A 是 B 子集的等价判断方法是 A && B == A
